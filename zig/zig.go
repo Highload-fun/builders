@@ -106,7 +106,7 @@ func getBranches(ctx context.Context) (map[string]*Branch, error) {
 	return branches, nil
 }
 
-// Build compiles Zig source code inside the sandbox using "zig build".
+// Build compiles Zig source code inside the sandbox using "zig build-exe".
 // If version is empty, "0.13.0" is used. The toolchain is downloaded on demand
 // and cached in [builders.CompilersHostDir].
 func (zig *Zig) Build(ctx context.Context, sb *sandbox.Sandbox, version string, flags []string) error {
@@ -141,26 +141,15 @@ func (zig *Zig) Build(ctx context.Context, sb *sandbox.Sandbox, version string, 
 
 	sb.AddEnv("ZIG_GLOBAL_CACHE_DIR=" + filepath.Join(builders.OutDir, ".zig-cache-global"))
 
-	if _, err = os.Stat(filepath.Join(builders.SourceDir, "build.zig")); err != nil {
-		if _, err := sb.CommandContext(ctx, binary, "init").Output(); err != nil {
-			return err
-		}
-	}
+	args := append([]string{"build-exe"}, flags...)
+	args = append(args, "-femit-bin="+filepath.Join(builders.OutDir, "main"), "main.zig")
 
-	args := append([]string{"build"}, flags...)
 	if _, err := sb.CommandContext(ctx, binary, args...).Output(); err != nil {
-		return err
-	}
-
-	if _, err := sb.CommandContext(ctx, "/usr/bin/cp", filepath.Join(builders.SourceDir, "zig-out/bin", filepath.Base(builders.SourceDir)), filepath.Join(builders.OutDir, "main")).Output(); err != nil {
 		return err
 	}
 
 	// To enable cleanup from host without sudo
 	if _, err := sb.CommandContext(ctx, "/usr/bin/chmod", "-R", "a+rwx",
-		filepath.Join(builders.SourceDir, ".zig-cache"),
-		filepath.Join(builders.SourceDir, "src"),
-		filepath.Join(builders.SourceDir, "zig-out"),
 		filepath.Join(builders.OutDir, ".zig-cache-global"),
 	).Output(); err != nil {
 		return err
