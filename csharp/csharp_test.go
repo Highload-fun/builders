@@ -21,4 +21,10 @@ func TestCSharp(t *testing.T) {
 	}
 
 	builders.Check(t, csharp.BuilderId, subFs)
+
+	md5Fs, err := fs.Sub(testSrcFs, "test/md5")
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	builders.CheckBuilding(t, "md5 with System.Security.Cryptography", csharp.BuilderId, "", nil, md5Fs)
 }

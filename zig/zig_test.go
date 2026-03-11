@@ -22,4 +22,10 @@ func TestZig(t *testing.T) {
 
 	builders.Check(t, zig.BuilderId, subFs)
 	builders.CheckBuilding(t, "with master branch", zig.BuilderId, "master", nil, subFs)
+
+	md5Fs, err := fs.Sub(testSrcFs, "test/md5")
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	builders.CheckBuilding(t, "md5 with std.crypto", zig.BuilderId, "", nil, md5Fs)
 }

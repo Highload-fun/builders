@@ -23,4 +23,10 @@ func TestCpp(t *testing.T) {
 
 	builders.Check(t, cpp.BuilderId, subFs)
 	builders.CheckBuilding(t, "with clang++18.1.3", cpp.BuilderId, "clang++18.1.3", []string{}, subFs)
+
+	md5Fs, err := fs.Sub(testSrcFs, "test/md5")
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	builders.CheckBuilding(t, "md5 with openssl", cpp.BuilderId, "", []string{"-O2", "-std=c++17", "-lcrypto"}, md5Fs)
 }

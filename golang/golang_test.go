@@ -23,4 +23,10 @@ func TestGolang(t *testing.T) {
 
 	builders.Check(t, golang.BuilderId, subFs)
 	builders.CheckBuilding(t, "with go1.25.1", golang.BuilderId, "go1.25.1", []string{}, subFs)
+
+	md5Fs, err := fs.Sub(testSrcFs, "test/md5")
+	if !assert.NoError(t, err) {
+		t.FailNow()
+	}
+	builders.CheckBuilding(t, "md5 with crypto/md5", golang.BuilderId, "", nil, md5Fs)
 }
