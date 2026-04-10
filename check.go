@@ -60,11 +60,16 @@ func CheckBuilding(t *testing.T, description, builderId, version string, flags [
 		}
 
 		sb := sandbox.New(t.TempDir())
-		_, err := sb.AddFile(filepath.Join(outDir, "main"), "/test/main", true).
+		sb.AddFile(filepath.Join(outDir, "main"), "/test/main", true).
 			SetCGroup(fmt.Sprintf("test-%d", rand.Uint())).
 			SetCpuSet("1").
-			SetMemLimit(256*1024*1024).
-			CommandContext(t.Context(), "/test/main").
+			SetMemLimit(256 * 1024 * 1024)
+
+		if builderId == "csharp" {
+			sb.MountDir("/lib", "/lib").MountDir("/usr/lib", "/usr/lib")
+		}
+
+		_, err := sb.CommandContext(t.Context(), "/test/main").
 			Output()
 		if !assert.NoError(t, err) {
 			t.FailNow()
