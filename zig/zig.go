@@ -128,11 +128,17 @@ func (zig *Zig) Build(ctx context.Context, sb *sandbox.Sandbox, version string, 
 		return fmt.Errorf("cannot prepare compiler: %w", err)
 	}
 
+	// Zig archives use "zig-x86_64-linux-" prefix since 0.14+, and "zig-linux-x86_64-" for older versions.
 	binary := ""
 	if version == "master" {
 		binary = filepath.Join("/compiler", "zig-x86_64-linux-"+branch.Version, "zig")
 	} else {
-		binary = filepath.Join("/compiler", "zig-linux-x86_64-"+version, "zig")
+		newStyleDir := filepath.Join(compilerPath, "zig-x86_64-linux-"+version)
+		if _, err := os.Stat(newStyleDir); err == nil {
+			binary = filepath.Join("/compiler", "zig-x86_64-linux-"+version, "zig")
+		} else {
+			binary = filepath.Join("/compiler", "zig-linux-x86_64-"+version, "zig")
+		}
 	}
 
 	sb.MountDir(compilerPath, "/compiler")

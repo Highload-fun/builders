@@ -168,6 +168,7 @@ func (c *CSharp) Build(ctx context.Context, sb *sandbox.Sandbox, version string,
 	sb.AddEnv("LANG=C")
 	sb.AddEnv("PATH=/bin:/usr/bin")
 	sb.AddEnv("HOME=/tmp/dotnet" + version)
+	sb.AddEnv("DOTNET_CLI_HOME=/tmp/dotnet" + version)
 
 	sb.ExecDir(builders.OutDir)
 
