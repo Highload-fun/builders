@@ -121,15 +121,28 @@ func (r *Rust) Build(ctx context.Context, sb *sandbox.Sandbox, version string, f
 	sb.AddEnv("PATH=/usr/bin")
 	sb.AddEnv("RUSTC_BOOTSTRAP=1")
 
-	args := append(flags, "-L", "/compiler/rustc/lib",
-		"-L", "/compiler/rust-std-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/lib",
-		"-o", filepath.Join(builders.OutDir, "main"), "main.rs")
+	args := rustcArgs(flags)
 
 	if _, err := sb.CommandContext(ctx, "/compiler/rustc/bin/rustc", args...).Output(); err != nil {
 		return err
 	}
 
 	return nil
+}
+
+// rustcArgs builds the argument list for rustc without mutating the caller's
+// flags slice. The previous code used `append(flags, ...)` which would write
+// into the caller's underlying array whenever it had spare capacity.
+func rustcArgs(flags []string) []string {
+	args := make([]string, 0, len(flags)+6)
+	args = append(args, flags...)
+	args = append(args,
+		"-L", "/compiler/rustc/lib",
+		"-L", "/compiler/rust-std-x86_64-unknown-linux-gnu/lib/rustlib/x86_64-unknown-linux-gnu/lib",
+		"-o", filepath.Join(builders.OutDir, "main"),
+		"main.rs",
+	)
+	return args
 }
 
 func prepareCompiler(ctx context.Context, version string) (string, error) {

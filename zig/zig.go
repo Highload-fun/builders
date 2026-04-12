@@ -180,14 +180,33 @@ func prepareCompiler(ctx context.Context, branchName string, branch *Branch) (st
 	branch.Lock()
 	defer branch.Unlock()
 
-	dir := filepath.Join(builders.CompilersHostDir, "zig", branchName)
+	dir := filepath.Join(compilersHostDir, "zig", branchName)
 	if _, err := os.Stat(dir); err == nil {
 		return dir, nil
 	}
 
-	if err := builders.DownloadAndExtractArchive(ctx, branch.AMD64.Tarball, dir); err != nil {
+	// Download into a staging directory first, then rename atomically.
+	// Without this, a mid-download failure leaves a partial/corrupt "dir"
+	// which passes the os.Stat check on the next call and wedges the builder.
+	tmpDir := dir + ".tmp"
+	_ = os.RemoveAll(tmpDir)
+	if err := downloadAndExtract(ctx, branch.AMD64.Tarball, tmpDir); err != nil {
+		_ = os.RemoveAll(tmpDir)
+		return "", err
+	}
+	if err := os.Rename(tmpDir, dir); err != nil {
+		_ = os.RemoveAll(tmpDir)
 		return "", err
 	}
 
 	return dir, nil
 }
+
+// downloadAndExtract is an indirection over builders.DownloadAndExtractArchive
+// so tests can substitute a deterministic implementation.
+var downloadAndExtract = builders.DownloadAndExtractArchive
+
+// compilersHostDir points at the cache directory for downloaded toolchains.
+// Defaults to the package-wide constant; tests override it to an isolated
+// directory.
+var compilersHostDir = builders.CompilersHostDir

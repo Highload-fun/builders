@@ -129,9 +129,7 @@ func (g *Golang) Build(ctx context.Context, sb *sandbox.Sandbox, version string,
 		}
 	}
 
-	args := []string{"build"}
-	args = append(args, flags...)
-	args = append(args, "-ldflags", "-linkshared", "-o", filepath.Join(builders.OutDir, "main", "./"))
+	args := buildArgs(flags)
 
 	cmd := sb.CommandContext(ctx, "/compiler/bin/go", args...)
 	if _, err = cmd.Output(); err != nil {
@@ -139,6 +137,18 @@ func (g *Golang) Build(ctx context.Context, sb *sandbox.Sandbox, version string,
 	}
 
 	return nil
+}
+
+// buildArgs assembles the argument list for `go build`. The caller-supplied
+// flags come first, followed by the fixed output and package path. Note that
+// `-linkshared` is not passed: it was previously handed to the linker as an
+// ldflag value, which the Go linker does not recognise.
+func buildArgs(flags []string) []string {
+	args := make([]string, 0, len(flags)+4)
+	args = append(args, "build")
+	args = append(args, flags...)
+	args = append(args, "-o", filepath.Join(builders.OutDir, "main"), "./")
+	return args
 }
 
 func prepareCompiler(ctx context.Context, version string) (string, error) {

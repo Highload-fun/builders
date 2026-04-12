@@ -77,29 +77,8 @@ func (c *CSharp) GetVersions(ctx context.Context) ([]builders.Version, error) {
 			continue
 		}
 
-		resp, err := builders.HttpGet(ctx, version.ReleasesJson)
-		if err != nil {
-			return nil, fmt.Errorf("cannot get versions: %w", err)
-		}
-		defer resp.Body.Close()
-
-		var versionData struct {
-			Releases []struct {
-				ReleaseDate    string `json:"release-date"`
-				ReleaseVersion string `json:"release-version"`
-			}
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&versionData); err != nil {
+		if err := fetchChannelReleases(ctx, version.ReleasesJson, versionsDate); err != nil {
 			return nil, err
-		}
-
-		for _, release := range versionData.Releases {
-			date, err := time.Parse("2006-01-02", release.ReleaseDate)
-			if err != nil {
-				return nil, fmt.Errorf("cannot parse release date: %w", err)
-			}
-
-			versionsDate[release.ReleaseVersion] = date
 		}
 	}
 
@@ -148,22 +127,12 @@ func (c *CSharp) Build(ctx context.Context, sb *sandbox.Sandbox, version string,
 	sb.AddFile("/usr/bin/x86_64-linux-gnu-ld.bfd", "/usr/bin/ld.bfd", true)
 	sb.AddFile("/usr/bin/objcopy", "/usr/bin/objcopy", true)
 
-	f, err := os.CreateTemp("", "")
+	passwdPath, err := writeBuilderPasswdFile()
 	if err != nil {
 		return err
 	}
-	defer os.Remove(f.Name())
-	defer f.Close()
-	if err := f.Chmod(06444); err != nil {
-		return err
-	}
-	if _, err := f.WriteString("builder:x:65534:65534:Builder:/home/builder:/bin/nologin\n"); err != nil {
-		return err
-	}
-	if err := f.Close(); err != nil {
-		return err
-	}
-	sb.AddFile(f.Name(), "/etc/passwd", false)
+	defer os.Remove(passwdPath)
+	sb.AddFile(passwdPath, "/etc/passwd", false)
 
 	sb.AddEnv("LANG=C")
 	sb.AddEnv("PATH=/bin:/usr/bin")
@@ -242,8 +211,10 @@ func getReleasesJsonUrl(ctx context.Context, version string) (string, error) {
 		return "", err
 	}
 
-	parts := strings.Split(version, ".")
-	channelVersion := strings.Join(parts[:2], ".")
+	channelVersion, err := parseChannelVersion(version)
+	if err != nil {
+		return "", err
+	}
 
 	for _, release := range versions.ReleasesIndex {
 		if channelVersion == release.ChannelVersion {
@@ -252,6 +223,48 @@ func getReleasesJsonUrl(ctx context.Context, version string) (string, error) {
 	}
 
 	return "", fmt.Errorf("invalid version")
+}
+
+// fetchChannelReleases pulls the releases metadata for a single .NET channel
+// and merges the releases into the supplied map. It always closes the HTTP
+// response body, avoiding the fd leak that the original loop-deferred close
+// would cause across many channels.
+var fetchChannelReleases = func(ctx context.Context, releasesURL string, dst map[string]time.Time) error {
+	resp, err := builders.HttpGet(ctx, releasesURL)
+	if err != nil {
+		return fmt.Errorf("cannot get versions: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var versionData struct {
+		Releases []struct {
+			ReleaseDate    string `json:"release-date"`
+			ReleaseVersion string `json:"release-version"`
+		}
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&versionData); err != nil {
+		return err
+	}
+
+	for _, release := range versionData.Releases {
+		date, err := time.Parse("2006-01-02", release.ReleaseDate)
+		if err != nil {
+			return fmt.Errorf("cannot parse release date: %w", err)
+		}
+		dst[release.ReleaseVersion] = date
+	}
+	return nil
+}
+
+// parseChannelVersion returns the "major.minor" channel prefix from a full
+// .NET version string. Versions without at least one dot produce a clean error
+// rather than panicking.
+func parseChannelVersion(version string) (string, error) {
+	parts := strings.Split(version, ".")
+	if len(parts) < 2 {
+		return "", fmt.Errorf("invalid version %q: expected major.minor format", version)
+	}
+	return strings.Join(parts[:2], "."), nil
 }
 
 func getReleaseLinks(ctx context.Context, version string) (string, error) {
@@ -318,4 +331,31 @@ func writeFile(filename string, mode int64, source io.Reader) error {
 	}
 
 	return nil
+}
+
+// writeBuilderPasswdFile creates a temp file with a single entry for the builder
+// user, used as a stand-in /etc/passwd inside the sandbox. Permissions are
+// 0444 (world-readable); setuid/setgid bits are intentionally omitted.
+func writeBuilderPasswdFile() (string, error) {
+	f, err := os.CreateTemp("", "")
+	if err != nil {
+		return "", err
+	}
+	name := f.Name()
+	cleanup := func(err error) (string, error) {
+		f.Close()
+		os.Remove(name)
+		return "", err
+	}
+	if err := f.Chmod(0444); err != nil {
+		return cleanup(err)
+	}
+	if _, err := f.WriteString("builder:x:65534:65534:Builder:/home/builder:/bin/nologin\n"); err != nil {
+		return cleanup(err)
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(name)
+		return "", err
+	}
+	return name, nil
 }

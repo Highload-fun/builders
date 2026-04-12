@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"regexp"
 	"sort"
+	"strings"
 	"time"
 
 	sandbox "github.com/Highload-fun/libsandbox"
@@ -99,7 +100,7 @@ func GetVersions(ctx context.Context, builderId string) ([]Version, error) {
 // writing the resulting binary to outDir. It creates an isolated sandbox with a 5 GB
 // memory limit and network disabled. If version is empty, the builder's default is used.
 func Build(ctx context.Context, builderId, version string, flags []string, srcDir, outDir string) error {
-	if !validVersion.MatchString(version) {
+	if !validVersion.MatchString(version) || strings.Contains(version, "..") {
 		return fmt.Errorf("invalid version string: %q", version)
 	}
 
