@@ -152,7 +152,7 @@ func (c *CSharp) Build(ctx context.Context, sb *sandbox.Sandbox, version string,
 	}
 
 	// Build the project
-	args := []string{"publish"}
+	args := []string{"publish", "-p:AllowUnsafeBlocks=true"}
 	args = append(args, flags...)
 	args = append(args, "--self-contained", "-o", "output")
 
