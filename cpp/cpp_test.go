@@ -29,4 +29,12 @@ func TestCpp(t *testing.T) {
 		t.FailNow()
 	}
 	builders.CheckBuilding(t, "md5 with openssl", cpp.BuilderId, "", []string{"-O2", "-std=c++17", "-lcrypto"}, md5Fs)
+
+	// Regression: clang -flto invokes ld with the LLVMgold plugin. ld searches
+	// for it at /usr/bin/../lib/LLVMgold.so inside the sandbox, but the
+	// actual plugin lives at /usr/lib/llvm-<MAJOR>/lib/LLVMgold.so. Without
+	// the explicit AddFile placement (see Build), this link fails with
+	// "cannot open shared object file". This exercises that placement.
+	builders.CheckBuilding(t, "clang -flto", cpp.BuilderId, "clang++18.1.3",
+		[]string{"-O2", "-std=c++17", "-flto"}, subFs)
 }

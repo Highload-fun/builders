@@ -171,9 +171,31 @@ func (c *Cpp) Build(ctx context.Context, sb *sandbox.Sandbox, version string, fl
 		sb.MountDir(d, d)
 	}
 
-	sb.AddFile(bin, "/usr/bin/"+compiler, true)
 	sb.AddFile("/usr/bin/x86_64-linux-gnu-ld.bfd", "/usr/bin/ld", true)
 	sb.AddFile("/usr/bin/x86_64-linux-gnu-as", "/usr/bin/as", true)
+
+	// Invocation path inside the sandbox. For g++ we hardlink it at
+	// /usr/bin/<compiler> because /usr/bin isn't bind-mounted; for clang we
+	// use its real path under /usr/lib/llvm-<MAJOR>/bin/clang directly,
+	// reachable via the /usr/lib mount. This matters for clang -flto: clang
+	// derives the LLVMgold plugin path from its own /proc/self/exe as
+	// "<clang_dir>/../lib/LLVMgold.so". When clang is hardlinked at
+	// /usr/bin/clang++, that resolves to /usr/lib/LLVMgold.so (missing -
+	// the plugin lives at /usr/lib/llvm-<MAJOR>/lib/LLVMgold.so), and the
+	// link step fails with:
+	//   /usr/bin/ld: /usr/bin/../lib/LLVMgold.so: error loading plugin: ...
+	//     cannot open shared object file: No such file or directory
+	// Running clang from its real path makes the relative lookup land on
+	// the actual plugin file. The hardlink-then-bind-mount order in
+	// libsandbox/sandbox prevents the alternative fix (placing the plugin
+	// at /usr/lib/LLVMgold.so) - the bind mount over /usr/lib hides any
+	// file we put there beforehand.
+	invokePath := "/usr/bin/" + compiler
+	if compiler == "clang++" {
+		invokePath = bin
+	} else {
+		sb.AddFile(bin, invokePath, true)
+	}
 
 	sb.AddEnv("LANG=C")
 	sb.AddEnv("PATH=/usr/bin")
@@ -186,7 +208,7 @@ func (c *Cpp) Build(ctx context.Context, sb *sandbox.Sandbox, version string, fl
 	args = append(args, flags...)
 	args = append(args, "-o", filepath.Join(builders.OutDir, "main"))
 
-	if _, err := sb.CommandContext(ctx, "/usr/bin/"+compiler, args...).Output(); err != nil {
+	if _, err := sb.CommandContext(ctx, invokePath, args...).Output(); err != nil {
 		return err
 	}
 
