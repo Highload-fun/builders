@@ -238,5 +238,17 @@ func resolveCompiler(version string) (compiler, bin string, err error) {
 		return "", "", fmt.Errorf("compiler binary not found: %s", bin)
 	}
 
+	// EvalSymlinks fully resolves the chain
+	// /usr/bin/clang++-<MAJOR> -> /usr/lib/llvm-<MAJOR>/bin/clang++ -> clang
+	// and returns the bare "clang" path. Invoking that path makes clang's
+	// argv[0] read "clang", which puts the driver in C mode and stops it
+	// from auto-linking libstdc++ - every C++ source that uses std::cout
+	// then fails to link with "undefined reference to std::cout". Restore
+	// the clang++ basename in the same bin dir (still a symlink to clang,
+	// but argv[0] now ends in ++ so the driver picks C++ mode).
+	if compiler == "clang++" {
+		real = filepath.Join(filepath.Dir(real), "clang++")
+	}
+
 	return compiler, real, nil
 }
