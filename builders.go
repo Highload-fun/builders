@@ -9,9 +9,12 @@
 package builders
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"math/rand/v2"
 	"os"
 	"os/exec"
@@ -113,7 +116,7 @@ func Build(ctx context.Context, builderId, version string, flags []string, srcDi
 	if err != nil {
 		return err
 	}
-	defer os.RemoveAll(tmpDir)
+	defer safeRemoveAll(tmpDir)
 
 	sb := sandbox.New(tmpDir).
 		SetCGroup(fmt.Sprintf("build-%s-%d", builderId, rand.Uint())).
@@ -141,4 +144,48 @@ func getBuilder(id string) (Builder, error) {
 	}
 
 	return b, nil
+}
+
+// mountUnder reports the first mount point at or under dir found in mountinfo
+// content, plus true. mountinfo field 5 (index 4 when split on spaces) is the
+// mount point. The match uses a component boundary so dir "/tmp/build1" does
+// not spuriously match a mount at "/tmp/build10". It is a pure function over an
+// io.Reader so it can be unit-tested with synthetic content and no root.
+func mountUnder(mountinfo io.Reader, dir string) (string, bool) {
+	prefix := dir + "/"
+	sc := bufio.NewScanner(mountinfo)
+	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for sc.Scan() {
+		f := strings.Fields(sc.Text())
+		if len(f) < 5 {
+			continue
+		}
+		if mp := f[4]; mp == dir || strings.HasPrefix(mp, prefix) {
+			return mp, true
+		}
+	}
+	return "", false
+}
+
+// safeRemoveAll removes dir, but first refuses if ANY mount still lives at or
+// under dir (detected via /proc/self/mountinfo, NOT st_dev - same-filesystem
+// bind mounts defeat st_dev checks). A leaked sandbox bind left mounted by a
+// SIGKILLed sandbox would otherwise be crossed by os.RemoveAll, deleting the
+// real host backing dir (the /usr/lib wipe). On a detected mount it logs and
+// returns without deleting, preserving the leak for monitoring. Fails closed if
+// mountinfo can't be read.
+func safeRemoveAll(dir string) error {
+	mi, err := os.Open("/proc/self/mountinfo")
+	if err != nil {
+		log.Printf("safeRemoveAll: cannot read mountinfo (%v); refusing to remove %q", err, dir)
+		return err
+	}
+	defer mi.Close()
+
+	if mp, found := mountUnder(mi, dir); found {
+		log.Printf("safeRemoveAll: REFUSING to remove %q - live mount at %q (leaked sandbox bind)", dir, mp)
+		return fmt.Errorf("refusing to remove %q: live mount at %q", dir, mp)
+	}
+
+	return os.RemoveAll(dir)
 }
