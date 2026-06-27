@@ -45,9 +45,15 @@ func CheckBuilding(t *testing.T, description, builderId, version string, flags [
 		if !assert.NoError(t, os.CopyFS(srcDir, sources)) {
 			t.FailNow()
 		}
+		if !assert.NoError(t, os.Chmod(srcDir, 0777)) {
+			t.FailNow()
+		}
 
 		outDir := filepath.Join(tmpDir, "out")
 		if !assert.NoError(t, os.MkdirAll(outDir, 0777)) {
+			t.FailNow()
+		}
+		if !assert.NoError(t, os.Chmod(outDir, 0777)) {
 			t.FailNow()
 		}
 
